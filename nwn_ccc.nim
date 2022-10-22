@@ -54,16 +54,16 @@ if ARGS["--nwccc-home"]:
 elif existsEnv("NWCCC_HOME") and not ARGS["--noenv"]:
     cfg.nwcccHome = getEnv("NWCCC_HOME")
 
+nwcccInit(cfg)
+if ARGS["--update-cache"]:
+    nwcccUpdateCache()
+
 # TODOs
 if ARGS["--append"]: warn "append mode not yet implemented"
 if ARGS["--credits"]: warn "credits file not yet implemented"
 if ARGS["--tlk"]: warn "writing to TLK not yet implemented"
 if ARGS["--nwc"]: warn "writing NWC not yet implemented"
 if ARGS["--resolve"]: warn "auto resolve not yet implemented"
-
-nwcccInit(cfg)
-if ARGS["--update-cache"]:
-    nwcccUpdateCache()
 
 proc processNwc(nwcfile: string) =
     try:
