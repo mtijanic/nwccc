@@ -36,7 +36,7 @@ Options:
                                    small: Overwrite larger files with smaller
                                    fail: Report error and abort
 """
-import std/[os, logging]
+import std/[os, logging, strutils]
 import libnwccc
 
 var cfg: NwcccConfig
@@ -60,8 +60,6 @@ if ARGS["--credits"]: warn "credits file not yet implemented"
 if ARGS["--tlk"]: warn "writing to TLK not yet implemented"
 if ARGS["--nwc"]: warn "writing NWC not yet implemented"
 if ARGS["--resolve"]: warn "auto resolve not yet implemented"
-if ARGS["--recursive"]: warn "recursive mode not yet implemented"
-if ARGS["--filelist"]: warn "filelist mode not yet implemented"
 
 nwcccInit(cfg)
 if ARGS["--update-cache"]:
@@ -79,6 +77,13 @@ proc processNwc(nwcfile: string) =
     except:
         error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg()
 
-
-for nwcfile in ARGS["<nwcfile>"]:
-    processNwc(nwcfile)
+if ARGS["--filelist"]:
+    for nwcfile in lines($ARGS["--filelist"]):
+        processNwc(nwcfile)
+elif ARGS["--recursive"]:
+    for nwcfile in walkDirRec($ARGS["--recursive"]):
+        if nwcfile.toLowerAscii.endsWith(".nwc"):
+            processNwc(nwcfile)
+else:
+    for nwcfile in ARGS["<nwcfile>"]:
+        processNwc(nwcfile)

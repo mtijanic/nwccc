@@ -1,0 +1,18 @@
+Name = "Fancy Stone"
+Author = "This Guy and That Other Guy"
+License = "CC BY-NC-SA 3.0"
+Version = "1.0.0" # For human reference only
+
+[files]
+guy_fancystone.mdl = "a863d5ecafda74c28f7127c6209b831c1a440e0c"
+guy_fancystone.mtr = "4b8560f5de071118125ff7fe30f6eeb437e004bb"
+guy_rock_d.dds = "d02783883a29a474bff46be09bfcf6b9c1141138"
+guy_rock_n.tga = "45b5539f963acf5c0f43c4c4b29e652f30de775d"
+
+[placeables.2da]
+Label = "Guy: Fancy Stone"
+ModelName = "guy_fancystone"
+SoundAppType = 17
+ShadowSize = 1
+BodyBag = 0
+Static = 1
