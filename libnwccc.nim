@@ -6,7 +6,8 @@ type NwcccConfig* = tuple[
     nwmaster: string,
     nwnHome: string,
     nwcccHome: string,
-    userAgent: string
+    userAgent: string,
+    destination: string,
 ]
 type NwcFile* = tuple[
     name, author, license, version: string,
@@ -119,3 +120,15 @@ proc nwcccParseNwcFile*(filename: string): NwcFile =
     if dict.hasKey("files"):
         for key in dict["files"].keys:
             result.files.add((key, dict.getSectionValue("files", key)))
+
+proc nwcccProcessNwcFile*(nwcfile: string) =
+    try:
+        notice "Processing " & nwcfile
+        let nwc = nwcccParseNwcFile(nwcfile)
+        info nwc.name & " v" & nwc.version & " by " & nwc.author & " (" & nwc.license & ")"
+        for (filename, hash) in nwc.files:
+            notice "Downloading " & filename & " (" & hash & ")"
+            let data = nwcccDownloadFromSwarm(hash)
+            nwcccWriteFile(filename, data, cfg.destination)
+    except:
+        error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg()

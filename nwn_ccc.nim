@@ -43,6 +43,7 @@ var cfg: NwcccConfig
 cfg.loglevel = if ARGS["--verbose"]: lvlDebug elif ARGS["--quiet"]: lvlError else: lvlNotice
 cfg.nwmaster = "http://api.nwn.beamdog.net/v1/servers"
 cfg.userAgent = "nwccc"
+cfg.destination = $ARGS["--destination"]
 
 if ARGS["--userdirectory"]:
     cfg.nwnHome = $ARGS["--userdirectory"];
@@ -65,25 +66,13 @@ if ARGS["--tlk"]: warn "writing to TLK not yet implemented"
 if ARGS["--nwc"]: warn "writing NWC not yet implemented"
 if ARGS["--resolve"]: warn "auto resolve not yet implemented"
 
-proc processNwc(nwcfile: string) =
-    try:
-        notice "Processing " & nwcfile
-        let nwc = nwcccParseNwcFile(nwcfile)
-        info nwc.name & " v" & nwc.version & " by " & nwc.author & " (" & nwc.license & ")"
-        for (filename, hash) in nwc.files:
-            notice "Downloading " & filename & " (" & hash & ")"
-            let data = nwcccDownloadFromSwarm(hash)
-            nwcccWriteFile(filename, data, $ARGS["--destination"])
-    except:
-        error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg()
-
 if ARGS["--filelist"]:
     for nwcfile in lines($ARGS["--filelist"]):
-        processNwc(nwcfile)
+        nwcccProcessNwcFile(nwcfile)
 elif ARGS["--recursive"]:
     for nwcfile in walkDirRec($ARGS["--recursive"]):
         if nwcfile.toLowerAscii.endsWith(".nwc"):
-            processNwc(nwcfile)
+            nwcccProcessNwcFile(nwcfile)
 else:
     for nwcfile in ARGS["<nwcfile>"]:
-        processNwc(nwcfile)
+        nwcccProcessNwcFile(nwcfile)
