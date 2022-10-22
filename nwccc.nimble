@@ -2,6 +2,7 @@ version       = "0.1.1"
 author        = "mtijanic"
 description   = "Neverwinter Custom Content Compiler"
 license       = "MIT"
+binDir        = "bin/"
 bin           = @["nwn_ccc"]
 installDirs   = @["nwccc"]
 
