@@ -1,0 +1,41 @@
+Name = "Fancy Rock"
+Author = "This Guy and That Other Guy"
+License = "CC BY-NC-SA 3.0"
+Version = "1.0.0" # For human reference only
+
+#
+# Screenshots can be shown by GUI programs when browing the repo
+#
+[screenshots]
+thumbnail = "https://i.ytimg.com/vi/eBYPMsMXmnk/maxresdefault.jpg"
+
+#
+# List all required files in the format:
+#    name-of-file = <hash of file>
+#
+# Note: The hashes are random files present in the swarm, not an actual model/textures
+[files]
+guy_fancyrock.mdl = "a863d5ecafda74c28f7127c6209b831c1a440e0c"
+guy_fancyrock.mtr = "4b8560f5de071118125ff7fe30f6eeb437e004bb"
+guy_rock_d.dds = "d02783883a29a474bff46be09bfcf6b9c1141138"
+guy_rock_n.tga = "45b5539f963acf5c0f43c4c4b29e652f30de775d"
+
+#
+# You can optionally add a line to the module's custom TLK
+# This gives you a symbolic name for the strref you can use in the 2DA
+#
+[tlk]
+plcname = "Fancy Rock"
+
+#
+# Suggested values for a placeables.2da entry for this placeable
+# Any omitted columns will be set to ****
+#
+[placeables.2da]
+Label = "Guy: Fancy Rock" # Optional, uses top level Name otherwise
+StrRef = "$plcname" # Replace with the TLK entry shown above
+ModelName = "guy_fancyrock"
+SoundAppType = 17
+ShadowSize = 1
+BodyBag = 0
+Static = 1
