@@ -85,18 +85,20 @@ proc nwcccDownloadFromSwarm*(hash: string): string =
     let resource = "/data/sha1" / hash[0..1] / hash[2..3] / hash
     const magic = "NSYC"
 
-    # TODO: Retry different manifests if one fails
-    let mf_id = db.getValue(sql"SELECT DISTINCT mf_id FROM resources WHERE hash=? ORDER BY RANDOM()", hash)
-    let url = db.getValue(sql"SELECT url FROM manifests WHERE rowid=?", mf_id)
-    debug "Fetching from " & url & resource & " ..."
-    let rawdata = http.getContent(url & resource)
-    if rawdata[0..3] == magic:
+    let rows = db.getAllRows(sql"SELECT mf_id FROM resources WHERE hash=? ORDER BY RANDOM()", hash)
+    for mf_id in rows:
+        let url = db.getValue(sql"SELECT url FROM manifests WHERE rowid=?", mf_id)
+        debug "Fetching from " & url & resource & " ..."
         try:
-            return decompress(rawdata, makeMagic(magic))
+            let rawdata = http.getContent(url & resource)
+            if rawdata[0..3] == magic:
+                return decompress(rawdata, makeMagic(magic))
+            return rawdata
         except:
-            error "Decompression failed: " & getCurrentExceptionMsg()
-            return ""
-    return rawdata
+            info "Fetching from " & url & resource & " failed: " & getCurrentExceptionMsg()
+
+    raise newException(OSError, "Unable to download hash " & hash & " from any server in swarm")
+
 
 proc nwcccWriteFile*(filename, content, destination: string) =
     if fileExists(destination):

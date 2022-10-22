@@ -68,13 +68,17 @@ if ARGS["--update-cache"]:
     nwcccUpdateCache()
 
 proc processNwc(nwcfile: string) =
-    notice "Processing " & nwcfile
-    let nwc = nwcccParseNwcFile(nwcfile)
-    info nwc.name & " v" & nwc.version & " by " & nwc.author & " (" & nwc.license & ")"
-    for (filename, hash) in nwc.files:
-        notice "Downloading " & filename & " (" & hash & ")"
-        let data = nwcccDownloadFromSwarm(hash)
-        nwcccWriteFile(filename, data, $ARGS["--destination"])
+    try:
+        notice "Processing " & nwcfile
+        let nwc = nwcccParseNwcFile(nwcfile)
+        info nwc.name & " v" & nwc.version & " by " & nwc.author & " (" & nwc.license & ")"
+        for (filename, hash) in nwc.files:
+            notice "Downloading " & filename & " (" & hash & ")"
+            let data = nwcccDownloadFromSwarm(hash)
+            nwcccWriteFile(filename, data, $ARGS["--destination"])
+    except:
+        error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg()
+
 
 for nwcfile in ARGS["<nwcfile>"]:
     processNwc(nwcfile)
