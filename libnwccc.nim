@@ -106,7 +106,7 @@ proc nwcccWriteFile*(filename, content, destination: string) =
         # write to directory
         info "Writing " & destination / filename
         createDir(destination)
-        openFileStream(destination / filename, fmWrite).write(content)
+        writeFile(destination / filename, content)
 
 proc nwcccParseNwcFile*(filename: string): NwcFile =
     let dict = loadConfig(filename)
