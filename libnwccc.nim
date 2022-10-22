@@ -1,6 +1,5 @@
 import std/[httpclient, options, streams, json, logging, db_sqlite, strutils, os, tables, parsecfg]
-import neverwinter/[compressedbuf]
-import extlib/libmanifest # hackity hack, should be in neverwinter.nim
+import neverwinter/[compressedbuf, nwsync]
 
 type NwcccConfig* = tuple[
     loglevel: logging.Level,
