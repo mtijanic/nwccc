@@ -19,6 +19,8 @@ var db: DbConn
 var http: HttpClient
 var cfg: NwcccConfig
 
+var downloaded = newTable[string, string]()
+
 proc getNwnHome(): string = 
     if cfg.nwnHome != "":
         return cfg.nwnHome
@@ -52,6 +54,8 @@ proc nwcccInit*(c: NwcccConfig) =
             UNIQUE(hash, mf_id)
         )""");
         db.exec(sql"CREATE INDEX IF NOT EXISTS idx_hash ON resources(hash)")
+
+    # TODO: Prepopulate downloaded table with hashes of existing files
 
 proc nwcccUpdateCache*() =
     let servers = parseJson(http.getContent(cfg.nwmaster))
@@ -127,8 +131,16 @@ proc nwcccProcessNwcFile*(nwcfile: string) =
         let nwc = nwcccParseNwcFile(nwcfile)
         info nwc.name & " v" & nwc.version & " by " & nwc.author & " (" & nwc.license & ")"
         for (filename, hash) in nwc.files:
-            notice "Downloading " & filename & " (" & hash & ")"
-            let data = nwcccDownloadFromSwarm(hash)
-            nwcccWriteFile(filename, data, cfg.destination)
+            if downloaded.hasKey(hash):
+                if downloaded[hash] != filename:
+                    info "Already have hash " & hash & " as " & downloaded[hash] & "; copying"
+                    copyFile(downloaded[hash], filename)
+                else:
+                    info "Already have same file content for " & filename
+            else:
+                notice "Downloading " & filename & " (" & hash & ")"
+                let data = nwcccDownloadFromSwarm(hash)
+                nwcccWriteFile(filename, data, cfg.destination)
+                downloaded[hash] = filename
     except:
         error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg()
