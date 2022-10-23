@@ -74,8 +74,9 @@ proc processManifest(base_url, mf_hash: string) =
 
 proc nwcccUpdateCache*() =
     let servers = parseJson(http.getContent(cfg.nwmaster))
-    var manifests : seq[tuple[url, mf : string]]
 
+    # Build a list of advertised manifests that didn't opt out
+    var manifests : seq[tuple[url, mf : string]]
     for srv in servers:
         if srv.contains("nwsync"):
             if srv["passworded"].getBool():
@@ -85,19 +86,32 @@ proc nwcccUpdateCache*() =
                 notice "Skipping opt-out server " & srv["session_name"].getStr() & "::" & srv["module_name"].getStr()
                 continue
 
-            let base_url = srv["nwsync"]["url"].getStr()
             for mf_node in srv["nwsync"]["manifests"]:
-                let mf_hash = mf_node["hash"].getStr()
-                if db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf_hash).parseInt() > 0: 
-                    debug "Already have manifest " & mf_hash & " advertised by " & base_url
-                else:
-                    manifests.add((base_url, mf_hash))
+                manifests.add((srv["nwsync"]["url"].getStr(), mf_node["hash"].getStr()))
 
-    var i = 1
+    # If an entry is in cache but is not advertised, it's stale and we remove from cache
+    let rows = db.getAllRows(sql"SELECT rowid, url, mf_hash FROM manifests")
+    for row in rows:
+        var have = false
+        for (url, mf) in manifests:
+            if url == row[1] and mf == row[2]:
+                have = true
+                break
+        if not have:
+            notice "Removing stale manifest " & row[2] & " previously advertised by " & row[1]
+            db.exec(sql"BEGIN")
+            db.exec(sql"DELETE FROM manifests WHERE rowid=?", row[0])
+            db.exec(sql"DELETE FROM resources WHERE mf_id=?", row[0])
+            db.exec(sql"COMMIT")
+
+    var i = 0
     for (url, mf) in manifests:
-        notice "[" & $i & "/" & $manifests.len & "] Fetching " & url & "/manifests/" & mf
         i+=1
-        processManifest(url, mf)
+        if db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf).parseInt() > 0: 
+            notice "[" & $i & "/" & $manifests.len & "] Already have manifest " & mf & " advertised by " & url
+        else:
+            notice "[" & $i & "/" & $manifests.len & "] Fetching " & url & "/manifests/" & mf
+            processManifest(url, mf)
 
 
 proc nwcccDownloadFromSwarm*(hash: string): string =
