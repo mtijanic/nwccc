@@ -18,6 +18,7 @@ Options:
   -c, --credits=<file>         Write credit fragments to <file> [default: credits.txt]
   -f, --filelist=<filelist>    Process all NWC files in <filelist>
   -u, --update-cache           Update local manifest cache
+  -l, --local-cache=<dir>      Also search <dir> for local files before downloading
 
   -v, --verbose                Verbose prints as files are being processed
   -q, --quiet                  Suppresses all non-error prints
@@ -43,7 +44,11 @@ var cfg: NwcccConfig
 cfg.loglevel = if ARGS["--verbose"]: lvlDebug elif ARGS["--quiet"]: lvlError else: lvlNotice
 cfg.nwmaster = "http://api.nwn.beamdog.net/v1/servers"
 cfg.userAgent = "nwccc"
-cfg.destination = $ARGS["--destination"]
+
+# Register directories which will be scanned for files to copy locally
+cfg.localDirs.add($ARGS["--destination"])
+if ARGS["--local-cache"]:
+    cfg.localDirs.add($ARGS["--local-cache"])
 
 if ARGS["--userdirectory"]:
     cfg.nwnHome = $ARGS["--userdirectory"];
@@ -68,11 +73,11 @@ if ARGS["--resolve"]: warn "auto resolve not yet implemented"
 
 if ARGS["--filelist"]:
     for nwcfile in lines($ARGS["--filelist"]):
-        nwcccProcessNwcFile(nwcfile)
+        nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
 elif ARGS["--recursive"]:
     for nwcfile in walkDirRec($ARGS["--recursive"]):
         if nwcfile.toLowerAscii.endsWith(".nwc"):
-            nwcccProcessNwcFile(nwcfile)
+            nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
 else:
     for nwcfile in ARGS["<nwcfile>"]:
-        nwcccProcessNwcFile(nwcfile)
+        nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])

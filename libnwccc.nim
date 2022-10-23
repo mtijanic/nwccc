@@ -1,4 +1,4 @@
-import std/[httpclient, options, streams, json, logging, db_sqlite, strutils, os, tables, parsecfg]
+import std/[httpclient, options, streams, json, logging, db_sqlite, strutils, os, tables, parsecfg, sha1]
 import neverwinter/[compressedbuf, nwsync]
 
 type NwcccConfig* = tuple[
@@ -7,7 +7,7 @@ type NwcccConfig* = tuple[
     nwnHome: string,
     nwcccHome: string,
     userAgent: string,
-    destination: string,
+    localDirs: seq[string],
 ]
 type NwcFile* = tuple[
     name, author, license, version: string,
@@ -20,7 +20,7 @@ var db: DbConn
 var http: HttpClient
 var cfg: NwcccConfig
 
-var downloaded = newTable[string, string]()
+var localDirsCache = newTable[string, string]()
 
 proc getNwnHome(): string = 
     if cfg.nwnHome != "":
@@ -56,7 +56,13 @@ proc nwcccInit*(c: NwcccConfig) =
         )""");
         db.exec(sql"CREATE INDEX IF NOT EXISTS idx_hash ON resources(hash)")
 
-    # TODO: Prepopulate downloaded table with hashes of existing files
+    for dir in cfg.localDirs:
+        for entry in walkDir(dir):
+            if entry.kind == pcFile or entry.kind == pcLinkToFile:
+                let hash = ($secureHashFile(entry.path)).toLowerAscii
+                debug "Detected existing file with hash " & hash & " - " & entry.path
+                localDirsCache[hash] = entry.path
+
 
 # TODO: Switch to async and download all manifests in parallel
 proc processManifest(base_url, mf_hash: string) =
@@ -153,22 +159,22 @@ proc nwcccParseNwcFile*(filename: string): NwcFile =
         for key in dict["files"].keys:
             result.files.add((key, dict.getSectionValue("files", key)))
 
-proc nwcccProcessNwcFile*(nwcfile: string) =
+proc nwcccProcessNwcFile*(nwcfile, destination: string) =
     try:
         notice "Processing " & nwcfile
         let nwc = nwcccParseNwcFile(nwcfile)
         info nwc.name & " v" & nwc.version & " by " & nwc.author & " (" & nwc.license & ")"
         for (filename, hash) in nwc.files:
-            if downloaded.hasKey(hash):
-                if downloaded[hash] != filename:
-                    info "Already have hash " & hash & " as " & downloaded[hash] & "; copying"
-                    copyFile(downloaded[hash], filename)
+            if localDirsCache.hasKey(hash):
+                if localDirsCache[hash] != (destination / filename):
+                    info "Already have hash " & hash & " as " & localDirsCache[hash] & "; copying"
+                    copyFile(localDirsCache[hash], filename)
                 else:
                     info "Already have same file content for " & filename
             else:
                 notice "Downloading " & filename & " (" & hash & ")"
                 let data = nwcccDownloadFromSwarm(hash)
-                nwcccWriteFile(filename, data, cfg.destination)
-                downloaded[hash] = filename
+                nwcccWriteFile(filename, data, destination)
+                localDirsCache[hash] = destination / filename
     except:
         error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg()
