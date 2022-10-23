@@ -14,6 +14,7 @@ type NwcFile* = tuple[
     files: seq[tuple[filename, hash: string]],
     # TODO: 2da data, etc
 ]
+const nwcccOptout = "[nwccc-optout]"
 
 var db: DbConn
 var http: HttpClient
@@ -57,34 +58,47 @@ proc nwcccInit*(c: NwcccConfig) =
 
     # TODO: Prepopulate downloaded table with hashes of existing files
 
+# TODO: Switch to async and download all manifests in parallel
+proc processManifest(base_url, mf_hash: string) =
+    try:
+        let mf_raw = http.getContent(base_url / "manifests" / mf_hash)
+        let mf = readManifest(newStringStream(mf_raw))
+        info "  Got " & $mf.entries.len & " entries, total size " & $totalSize(mf)
+        db.exec(sql"BEGIN")
+        let mf_id = db.insertID(sql"INSERT INTO manifests(url, mf_hash) VALUES(?,?)", base_url, mf_hash)
+        for entry in mf.entries:
+            discard db.tryExec(sql"INSERT INTO resources(hash, mf_id) VALUES(?,?)", entry.sha1, mf_id)
+        db.exec(sql"COMMIT")
+    except:
+        error "Failed: " & getCurrentExceptionMsg()
+
 proc nwcccUpdateCache*() =
     let servers = parseJson(http.getContent(cfg.nwmaster))
+    var manifests : seq[tuple[url, mf : string]]
 
     for srv in servers:
         if srv.contains("nwsync"):
+            if srv["passworded"].getBool():
+                debug "Skipping passworded server " & srv["session_name"].getStr() & "::" & srv["module_name"].getStr()
+                continue
+            if srv["module_description"].getStr().contains(nwcccOptout):
+                notice "Skipping opt-out server " & srv["session_name"].getStr() & "::" & srv["module_name"].getStr()
+                continue
+
             let base_url = srv["nwsync"]["url"].getStr()
-            let manifests = srv["nwsync"]["manifests"]
-            for mf_node in manifests:
+            for mf_node in srv["nwsync"]["manifests"]:
                 let mf_hash = mf_node["hash"].getStr()
-                debug "trying " & mf_hash
                 if db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf_hash).parseInt() > 0: 
-                    info "Skipping manifest " & mf_hash
-                    continue
-            
-                let mf_url = base_url & "/manifests/" & mf_hash
-                notice "Fetching " & mf_url
-                try:
-                    # TODO: Switch to async and download all manifests in parallel
-                    let mf_raw = http.getContent(mf_url)
-                    let mf = readManifest(newStringStream(mf_raw))
-                    info "  Got " & $mf.entries.len & " entries, total size " & $totalSize(mf)
-                    db.exec(sql"BEGIN")
-                    let mf_id = db.insertID(sql"INSERT INTO manifests(url, mf_hash) VALUES(?,?)", base_url, mf_hash)
-                    for entry in mf.entries:
-                        discard db.tryExec(sql"INSERT INTO resources(hash, mf_id) VALUES(?,?)", entry.sha1, mf_id)
-                    db.exec(sql"COMMIT")
-                except:
-                    error "Failed: " & getCurrentExceptionMsg()
+                    debug "Already have manifest " & mf_hash & " advertised by " & base_url
+                else:
+                    manifests.add((base_url, mf_hash))
+
+    var i = 1
+    for (url, mf) in manifests:
+        notice "[" & $i & "/" & $manifests.len & "] Fetching " & url & "/manifests/" & mf
+        i+=1
+        processManifest(url, mf)
+
 
 proc nwcccDownloadFromSwarm*(hash: string): string =
     let resource = "/data/sha1" / hash[0..1] / hash[2..3] / hash
