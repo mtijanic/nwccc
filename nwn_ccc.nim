@@ -67,19 +67,23 @@ if ARGS["--update-cache"]:
 # TODOs
 if ARGS["--append"]: warn "append mode not yet implemented"
 if ARGS["--tlk"]: warn "writing to TLK not yet implemented"
-if ARGS["--nwc"]: warn "writing NWC not yet implemented"
 if ARGS["--resolve"]: warn "auto resolve not yet implemented"
+
+proc processNwc(nwcfile: string) =
+    nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
+    if ARGS["--nwc"]:
+        nwcccWriteFile(nwcfile.extractFilename(), readFile(nwcfile), $ARGS["--nwc"])
 
 if ARGS["--filelist"]:
     for nwcfile in lines($ARGS["--filelist"]):
-        nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
+        processNwc(nwcfile)
 elif ARGS["--recursive"]:
     for nwcfile in walkDirRec($ARGS["--recursive"]):
         if nwcfile.toLowerAscii.endsWith(".nwc"):
-            nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
+            processNwc(nwcfile)
 else:
     for nwcfile in ARGS["<nwcfile>"]:
-        nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
+        processNwc(nwcfile)
 
 if ARGS["--credits"]:
     nwcccWriteCredits($ARGS["--credits"])
