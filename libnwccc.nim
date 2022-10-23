@@ -119,6 +119,17 @@ proc nwcccUpdateCache*() =
             notice "[" & $i & "/" & $manifests.len & "] Fetching " & url & "/manifests/" & mf
             processManifest(url, mf)
 
+proc nwcccExtractFromNwsync*(hash: string): string =
+    let nwsyncdir = getNwnHome() / "nwsync"
+    for file in walkDir(nwsyncdir):
+        if file.path.contains("nwsyncdata_") and file.path.endsWith(".sqlite3"):
+            debug "Checking local nwsync database " & file.path
+            let shard = open(file.path, "", "", "")
+            let data = shard.getValue(sql"SELECT data FROM resrefs WHERE sha1=?", hash)
+            if data != "":
+                return data
+    return ""
+
 
 proc nwcccDownloadFromSwarm*(hash: string): string =
     let resource = "/data/sha1" / hash[0..1] / hash[2..3] / hash
@@ -172,8 +183,12 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) =
                 else:
                     info "Already have same file content for " & filename
             else:
-                notice "Downloading " & filename & " (" & hash & ")"
-                let data = nwcccDownloadFromSwarm(hash)
+                var data = nwcccExtractFromNwsync(hash)
+                if data != "":
+                    info "Found hash " & hash & " in local nwsync data"
+                else:
+                    notice "Downloading " & filename & " (" & hash & ")"
+                    data = nwcccDownloadFromSwarm(hash)
                 nwcccWriteFile(filename, data, destination)
                 localDirsCache[hash] = destination / filename
     except:
