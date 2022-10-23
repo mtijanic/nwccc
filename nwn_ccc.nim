@@ -66,7 +66,6 @@ if ARGS["--update-cache"]:
 
 # TODOs
 if ARGS["--append"]: warn "append mode not yet implemented"
-if ARGS["--credits"]: warn "credits file not yet implemented"
 if ARGS["--tlk"]: warn "writing to TLK not yet implemented"
 if ARGS["--nwc"]: warn "writing NWC not yet implemented"
 if ARGS["--resolve"]: warn "auto resolve not yet implemented"
@@ -81,3 +80,6 @@ elif ARGS["--recursive"]:
 else:
     for nwcfile in ARGS["<nwcfile>"]:
         nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
+
+if ARGS["--credits"]:
+    nwcccWriteCredits($ARGS["--credits"])

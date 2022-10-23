@@ -19,7 +19,7 @@ const nwcccOptout = "[nwccc-optout]"
 var db: DbConn
 var http: HttpClient
 var cfg: NwcccConfig
-
+var credits: seq[string]
 var localDirsCache = newTable[string, string]()
 
 proc getNwnHome(): string = 
@@ -174,7 +174,9 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) =
     try:
         notice "Processing " & nwcfile
         let nwc = nwcccParseNwcFile(nwcfile)
-        info nwc.name & " v" & nwc.version & " by " & nwc.author & " (" & nwc.license & ")"
+        let summary = nwc.name & " v" & nwc.version & " by " & nwc.author & " (" & nwc.license & ")"
+        info summary
+        credits.add(summary)
         for (filename, hash) in nwc.files:
             if localDirsCache.hasKey(hash):
                 if localDirsCache[hash] != (destination / filename):
@@ -193,3 +195,9 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) =
                 localDirsCache[hash] = destination / filename
     except:
         error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg()
+
+proc nwcccWriteCredits*(file: string) =
+    let f = openFileStream(file, fmAppend)
+    for line in credits:
+        f.write(line & "\n")
+    notice "Wrote credits to " & file
