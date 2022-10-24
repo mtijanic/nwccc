@@ -1,5 +1,8 @@
-import std/[httpclient, options, streams, json, logging, db_sqlite, strutils, os, tables, parsecfg, sha1]
+import std/[httpclient, options, streams, json, logging, db_sqlite, strutils, os, tables, parsecfg, sha1,
+            asyncdispatch, asyncfutures, sequtils]
 import neverwinter/[compressedbuf, nwsync]
+
+import asynchttppool
 
 type NwcccConfig* = tuple[
     loglevel: logging.Level,
@@ -8,6 +11,7 @@ type NwcccConfig* = tuple[
     nwcccHome: string,
     userAgent: string,
     localDirs: seq[string],
+    parallelDownloads: int,
 ]
 type NwcFile* = tuple[
     name, author, license, version: string,
@@ -17,7 +21,7 @@ type NwcFile* = tuple[
 const nwcccOptout = "[nwccc-optout]"
 
 var db: DbConn
-var http: HttpClient
+var http: AsyncHttpPool
 var cfg: NwcccConfig
 var credits: seq[string]
 var localDirsCache = newTable[string, string]()
@@ -32,7 +36,7 @@ proc getNwnHome(): string =
 
 proc nwcccInit*(c: NwcccConfig) = 
     cfg = c
-    http = newHttpClient(cfg.userAgent)
+    http = newAsyncHttpPool(cfg.parallelDownloads, cfg.userAgent)
     addHandler(newConsoleLogger(cfg.loglevel, "[$levelid] "))
 
     let home = if cfg.nwcccHome != "": cfg.nwcccHome else: getNwnHome() / "nwccc"
@@ -64,10 +68,9 @@ proc nwcccInit*(c: NwcccConfig) =
                 localDirsCache[hash] = entry.path
 
 
-# TODO: Switch to async and download all manifests in parallel
-proc processManifest(base_url, mf_hash: string) =
+proc processManifest(base_url, mf_hash: string): Future[bool] {.async.} =
     try:
-        let mf_raw = http.getContent(base_url / "manifests" / mf_hash)
+        let mfRaw = await http.getContent(base_url & "/manifests/" & mf_hash)
         let mf = readManifest(newStringStream(mf_raw))
         info "  Got " & $mf.entries.len & " entries, total size " & $totalSize(mf)
         db.exec(sql"BEGIN")
@@ -75,14 +78,17 @@ proc processManifest(base_url, mf_hash: string) =
         for entry in mf.entries:
             discard db.tryExec(sql"INSERT INTO resources(hash, mf_id) VALUES(?,?)", entry.sha1, mf_id)
         db.exec(sql"COMMIT")
+        result = true
     except:
-        error "Failed: " & getCurrentExceptionMsg()
+        error "Failed: " & getCurrentExceptionMsg().split("\n", 2)[0]
+        result = false
 
-proc nwcccUpdateCache*() =
-    let servers = parseJson(http.getContent(cfg.nwmaster))
+proc nwcccUpdateCache*() {.async.} =
+    let servers = parseJson(await http.getContent(cfg.nwmaster))
 
     # Build a list of advertised manifests that didn't opt out
-    var manifests : seq[tuple[url, mf : string]]
+    type ManifestEntry = tuple[url, mf : string]
+    var manifests : seq[ManifestEntry]
     for srv in servers:
         if srv.contains("nwsync"):
             if srv["passworded"].getBool():
@@ -110,14 +116,17 @@ proc nwcccUpdateCache*() =
             db.exec(sql"DELETE FROM resources WHERE mf_id=?", row[0])
             db.exec(sql"COMMIT")
 
-    var i = 0
-    for (url, mf) in manifests:
-        i+=1
-        if db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf).parseInt() > 0: 
-            notice "[" & $i & "/" & $manifests.len & "] Already have manifest " & mf & " advertised by " & url
-        else:
-            notice "[" & $i & "/" & $manifests.len & "] Fetching " & url & "/manifests/" & mf
-            processManifest(url, mf)
+    var futures: seq[Future[bool]]
+    for idx, mf in manifests:
+      if db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf.mf).parseInt() > 0:
+          notice "[" & $(idx) & "/" & $(manifests.len) & "] Already have manifest " & mf.mf & " advertised by " & mf.url
+      else:
+          futures.add processManifest(mf.url, mf.mf)
+
+    if futures.len > 0:
+      let results = await all futures
+      if results.anyIt(not it):
+        error "Some manifests failed to update correctly; read the logs above"
 
 proc nwcccExtractFromNwsync*(hash: string): string =
     let nwsyncdir = getNwnHome() / "nwsync"
@@ -131,7 +140,7 @@ proc nwcccExtractFromNwsync*(hash: string): string =
     return ""
 
 
-proc nwcccDownloadFromSwarm*(hash: string): string =
+proc nwcccDownloadFromSwarm*(hash: string): Future[string] {.async.} =
     let resource = "/data/sha1" / hash[0..1] / hash[2..3] / hash
     const magic = "NSYC"
 
@@ -140,7 +149,7 @@ proc nwcccDownloadFromSwarm*(hash: string): string =
         let url = db.getValue(sql"SELECT url FROM manifests WHERE rowid=?", mf_id)
         debug "Fetching from " & url & resource & " ..."
         try:
-            let rawdata = http.getContent(url & resource)
+            let rawdata = await http.getContent(url & resource)
             if rawdata[0..3] == magic:
                 return decompress(rawdata, makeMagic(magic))
             return rawdata
@@ -170,7 +179,7 @@ proc nwcccParseNwcFile*(filename: string): NwcFile =
         for key in dict["files"].keys:
             result.files.add((key, dict.getSectionValue("files", key)))
 
-proc nwcccProcessNwcFile*(nwcfile, destination: string) =
+proc nwcccProcessNwcFile*(nwcfile, destination: string) {.async.} =
     try:
         notice "Processing " & nwcfile
         let nwc = nwcccParseNwcFile(nwcfile)
@@ -190,11 +199,11 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) =
                     info "Found hash " & hash & " in local nwsync data"
                 else:
                     notice "Downloading " & filename & " (" & hash & ")"
-                    data = nwcccDownloadFromSwarm(hash)
+                    data = await nwcccDownloadFromSwarm(hash)
                 nwcccWriteFile(filename, data, destination)
                 localDirsCache[hash] = destination / filename
     except:
-        error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg()
+        error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg().split("\n", 2)[0]
 
 proc nwcccWriteCredits*(file: string) =
     let f = openFileStream(file, fmAppend)
