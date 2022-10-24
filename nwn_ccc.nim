@@ -19,6 +19,7 @@ Options:
   -f, --filelist=<filelist>    Process all NWC files in <filelist>
   -u, --update-cache           Update local manifest cache
   -l, --local-cache=<dir>      Also search <dir> for local files before downloading
+  --parallel=<N>               Parallel downloads [default: 5]
 
   -v, --verbose                Verbose prints as files are being processed
   -q, --quiet                  Suppresses all non-error prints
@@ -37,10 +38,11 @@ Options:
                                    small: Overwrite larger files with smaller
                                    fail: Report error and abort
 """
-import std/[os, logging, strutils]
+import std/[os, logging, strutils, asyncdispatch]
 import libnwccc
 
 var cfg: NwcccConfig
+cfg.parallelDownloads = ($ARGS["--parallel"]).parseInt
 cfg.loglevel = if ARGS["--verbose"]: lvlDebug elif ARGS["--quiet"]: lvlError else: lvlNotice
 cfg.nwmaster = "http://api.nwn.beamdog.net/v1/servers"
 cfg.userAgent = "nwccc"
@@ -62,7 +64,7 @@ elif existsEnv("NWCCC_HOME") and not ARGS["--noenv"]:
 
 nwcccInit(cfg)
 if ARGS["--update-cache"]:
-    nwcccUpdateCache()
+    waitFor nwcccUpdateCache()
 
 # TODOs
 if ARGS["--append"]: warn "append mode not yet implemented"
@@ -70,7 +72,7 @@ if ARGS["--tlk"]: warn "writing to TLK not yet implemented"
 if ARGS["--resolve"]: warn "auto resolve not yet implemented"
 
 proc processNwc(nwcfile: string) =
-    nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
+    waitFor nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
     if ARGS["--nwc"]:
         nwcccWriteFile(nwcfile.extractFilename(), readFile(nwcfile), $ARGS["--nwc"])
 
