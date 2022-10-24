@@ -8,12 +8,17 @@ type
     timeout: Natural # milliseconds
     progress: ProgressChangedProc[Future[void]]
 
-  AsyncHttpPool* = ref object
+  AsyncHttpPoolObj = object
     parallelism: Positive
     clientAvailable: AsyncEvent
     clients: seq[AsyncHttpClient]
     queue: seq[QueueEntry]
     inflight: seq[QueueEntry]
+
+  AsyncHttpPool* = ref AsyncHttpPoolObj
+
+proc `=destroy`*(pool: var AsyncHttpPoolObj) =
+  unregister(pool.clientAvailable)
 
 func `$`*(pool: AsyncHttpPool): string =
   format("HttpPool[$1/$2 available, $3 queued, $4 inflight]",
@@ -56,6 +61,7 @@ proc downloadAndResolve(pool: AsyncHttpPool, ahttp: AsyncHttpClient, qe: QueueEn
 
 proc newAsyncHttpPool*(parallelism: Positive, userAgent: string): AsyncHttpPool =
   new(result)
+
   result.parallelism = parallelism
   result.clientAvailable = newAsyncEvent()
   for i in 0..<parallelism:
