@@ -2,7 +2,7 @@ import std/[asyncdispatch, httpclient, logging, strutils]
 from std/net import TimeoutError
 
 type
-  QueueEntry = tuple
+  QueueEntry = ref object
     url: string
     future: Future[string]
     timeout: Natural # milliseconds
@@ -80,7 +80,7 @@ proc getContent*(pool: AsyncHttpPool, url: string, timeout: Natural = 0,
                  progress: ProgressChangedProc[Future[void]] = nil): Future[string]  =
   let fut = newFuture[string]()
   info pool, " queued: ", url
-  pool.queue.insert((url, fut, timeout, progress))
+  pool.queue.insert(QueueEntry(url: url, future: fut, timeout: timeout, progress: progress))
   if pool.clients.len > 0:
     pool.clientAvailable.trigger()
   return fut
