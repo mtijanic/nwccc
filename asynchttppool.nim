@@ -5,7 +5,8 @@ type
   QueueEntry = tuple
     url: string
     future: Future[string]
-    timeout: Natural # seconds
+    timeout: Natural # milliseconds
+    progress: ProgressChangedProc[Future[void]]
 
   AsyncHttpPool* = ref object
     parallelism: Positive
@@ -28,10 +29,13 @@ proc downloadAndResolve(pool: AsyncHttpPool, ahttp: AsyncHttpClient, qe: QueueEn
     pool.inflight.del(pool.inflight.find(qe))
   pool.inflight.add(qe)
 
-  ahttp.onProgressChanged = proc(total, progress, speed: BiggestInt) {.async.} =
-    notice qe.url, ": ", progress, " of ", total, ", current rate: ", speed div 1000, "kb/s"
+  ahttp.onProgressChanged = proc (total, progress, speed: BiggestInt) {.async.} =
+    if not isNil qe.progress:
+      result = qe.progress(total, progress, speed)
+    else:
+      info qe.url, ": ", progress, " of ", total, ", current rate: ", speed div 1000, "kb/s"
 
-  notice pool, " starting download: ", qe.url
+  info pool, " starting download: ", qe.url
   let fut = ahttp.getContent(qe.url)
   if qe.timeout > 0:
     let timeoutFut = withTimeout(fut, qe.timeout)
@@ -47,7 +51,7 @@ proc downloadAndResolve(pool: AsyncHttpPool, ahttp: AsyncHttpClient, qe: QueueEn
     error pool, " ", qe.url, " failed: ", fut.readError.msg.split("\n", 2)[0]
     qe.future.fail(fut.readError)
   else:
-    notice pool, " download complete: ", qe.url
+    info pool, " download complete: ", qe.url
     qe.future.complete(fut.read)
 
 proc newAsyncHttpPool*(parallelism: Positive, userAgent: string): AsyncHttpPool =
@@ -66,10 +70,11 @@ proc newAsyncHttpPool*(parallelism: Positive, userAgent: string): AsyncHttpPool 
       asyncCheck downloadAndResolve(bindResult, ahttp, qe)
     false
 
-proc getContent*(pool: AsyncHttpPool, url: string, timeout: Natural = 0): Future[string]  =
+proc getContent*(pool: AsyncHttpPool, url: string, timeout: Natural = 0,
+                 progress: ProgressChangedProc[Future[void]] = nil): Future[string]  =
   let fut = newFuture[string]()
   info pool, " queued: ", url
-  pool.queue.insert((url, fut, timeout))
+  pool.queue.insert((url, fut, timeout, progress))
   if pool.clients.len > 0:
     pool.clientAvailable.trigger()
   return fut

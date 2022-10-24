@@ -69,8 +69,9 @@ proc nwcccInit*(c: NwcccConfig) =
 
 
 proc processManifest(base_url, mf_hash: string): Future[bool] {.async.} =
+    let fqurl = base_url & "/manifests/" & mf_hash
     try:
-        let mfRaw = await http.getContent(base_url & "/manifests/" & mf_hash)
+        let mfRaw = await http.getContent(fqurl)
         let mf = readManifest(newStringStream(mf_raw))
         info "  Got " & $mf.entries.len & " entries, total size " & $totalSize(mf)
         db.exec(sql"BEGIN")
@@ -80,7 +81,7 @@ proc processManifest(base_url, mf_hash: string): Future[bool] {.async.} =
         db.exec(sql"COMMIT")
         result = true
     except:
-        error "Failed: " & getCurrentExceptionMsg().split("\n", 2)[0]
+        error fqurl & " failed: " & getCurrentExceptionMsg().split("\n", 2)[0]
         result = false
 
 proc nwcccUpdateCache*() {.async.} =
@@ -119,8 +120,9 @@ proc nwcccUpdateCache*() {.async.} =
     var futures: seq[Future[bool]]
     for idx, mf in manifests:
       if db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf.mf).parseInt() > 0:
-          notice "[" & $(idx) & "/" & $(manifests.len) & "] Already have manifest " & mf.mf & " advertised by " & mf.url
+          info "[" & $idx & "/" & $manifests.len & "] Already have manifest " & mf.mf & " advertised by " & mf.url
       else:
+          notice "[" & $idx & "/" & $manifests.len & "] Fetching " & mf.url & "/manifests/" & mf.mf
           futures.add processManifest(mf.url, mf.mf)
 
     if futures.len > 0:
