@@ -210,9 +210,11 @@ proc nwcccDownloadFromSwarm*(hash: string): Future[string] {.async.} =
         debug "Fetching from " & url & resource & " ..."
         try:
             let rawdata = await http.getContent(url & resource)
-            if rawdata[0..3] == magic:
-                return decompress(rawdata, makeMagic(magic))
-            return rawdata
+            let data = if rawdata[0..3] == magic: decompress(rawdata, makeMagic(magic))
+                       else: rawdata
+            if secureHash(data) != parseSecureHash(hash):
+                raise newException(ValueError, "Checksum mismatch on " & $hash)
+            return data
         except:
             info "Fetching from " & url & resource & " failed: " & getCurrentExceptionMsg()
 
