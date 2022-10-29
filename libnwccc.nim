@@ -105,6 +105,8 @@ proc processManifest(base_url, mf_hash: string): Future[bool] {.async.} =
     let fqurl = base_url & "/manifests/" & mf_hash
     try:
         let mfRaw = await http.getContent(fqurl)
+        if secureHash(mfRaw) != parseSecureHash(mfHash):
+            raise newException(ValueError, "Checksum mismatch")
         let mf = readManifest(newStringStream(mf_raw))
         info "  Got " & $mf.entries.len & " entries, total size " & $totalSize(mf)
         db.exec(sql"BEGIN")
