@@ -46,19 +46,52 @@ proc nwcccInit*(c: NwcccConfig) =
     let cacheExists = fileExists(cache)
     info "Using cache: " & cache & (if cacheExists: " (existing)" else: " (new)")
     db = open(cache, "", "", "")
-    if not cacheExists:
-        db.exec(sql"""
-        CREATE TABLE IF NOT EXISTS manifests(
-            url      TEXT NOT NULL,
-            mf_hash  TEXT NOT NULL
-        )""")
-        db.exec(sql"""
-        CREATE TABLE IF NOT EXISTS resources(
-            hash     TEXT NOT NULL,
-            mf_id    INT  NOT NULL,
-            UNIQUE(hash, mf_id)
-        )""");
-        db.exec(sql"CREATE INDEX IF NOT EXISTS idx_hash ON resources(hash)")
+
+    # To change the DB schema, simply add another row to the migrations seq.
+    # - The first entry of the tuple is a human-readable description of the change.
+    # - The second entry of the tuple is the sql code needed to bring the database
+    #   to the state you want it to have. The code does not have to be idempotent
+    #   (migrations only run once), but robustness can't hurt.
+
+    type Migration = tuple[description: string, sql: seq[SqlQuery]]
+    const migrations: seq[Migration] = @[
+        # 0
+        (
+            "Initial database schema",
+            @[
+                sql """
+                    CREATE TABLE IF NOT EXISTS manifests(
+                        url      TEXT NOT NULL,
+                        mf_hash  TEXT NOT NULL
+                    );
+                """,
+                sql """
+                    CREATE TABLE IF NOT EXISTS resources(
+                        hash     TEXT NOT NULL,
+                        mf_id    INT  NOT NULL,
+                        UNIQUE(hash, mf_id)
+                    );
+                """,
+                sql """
+                    CREATE INDEX IF NOT EXISTS idx_hash ON resources(hash);
+                """
+            ]
+        )
+    ]
+
+    let migration = db.getValue(sql"PRAGMA user_version").parseInt
+    # user_version holds the number of migrations applied, in order (migrations.len)
+    # This means that the value you read here will be the next migration to apply:
+    db.exec(sql"BEGIN")
+    if migration > migrations.len:
+        error "database file was created with newer version of utility, aborting for your own safety"
+        quit(1)
+    for mig in migrations[migration..<migrations.len]:
+        notice "sqlite: Applying migration: ", mig.description
+        for s in mig.sql:
+            db.exec(s)
+    db.exec(sql("PRAGMA user_version=" & $migrations.len))
+    db.exec(sql"COMMIT")
 
     for dir in cfg.localDirs:
         for entry in walkDir(dir):
