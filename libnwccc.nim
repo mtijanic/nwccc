@@ -76,6 +76,14 @@ proc nwcccInit*(c: NwcccConfig) =
                     CREATE INDEX IF NOT EXISTS idx_hash ON resources(hash);
                 """
             ]
+        ),
+        (
+            "Add table manifests_blacklist to blacklist successfully downloaded, but invalid manifests",
+            @[sql """
+                CREATE TABLE IF NOT EXISTS manifest_blacklist (
+                    mf_hash TEXT NOT NULL UNIQUE
+                )
+            """]
         )
     ]
 
@@ -101,6 +109,13 @@ proc nwcccInit*(c: NwcccConfig) =
                 localDirsCache[hash] = entry.path
 
 
+proc nwcccIsManifestBlacklisted*(mfHash: string): bool =
+    db.getValue(sql"select count(mf_hash) from manifest_blacklist where mf_hash = ?", mfHash) != "0"
+
+proc nwcccBlacklistManifest*(mfHash: string) =
+    error mfHash, ": blacklisting"
+    db.exec(sql"insert into manifest_blacklist (mf_hash) values(?)", mfHash)
+
 proc processManifest(base_url, mf_hash: string): Future[bool] {.async.} =
     let fqurl = base_url & "/manifests/" & mf_hash
     try:
@@ -115,6 +130,12 @@ proc processManifest(base_url, mf_hash: string): Future[bool] {.async.} =
             discard db.tryExec(sql"INSERT INTO resources(hash, mf_id) VALUES(?,?)", entry.sha1, mf_id)
         db.exec(sql"COMMIT")
         result = true
+
+    except ManifestError:
+        error fqurl & " failed to parse manifest: " & getCurrentExceptionMsg().split("\n", 2)[0]
+        nwcccBlacklistManifest(mfHash)
+        result = false
+
     except:
         error fqurl & " failed: " & getCurrentExceptionMsg().split("\n", 2)[0]
         result = false
@@ -154,7 +175,9 @@ proc nwcccUpdateCache*() {.async.} =
 
     var futures: seq[Future[bool]]
     for idx, mf in manifests:
-      if db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf.mf).parseInt() > 0:
+      if nwcccIsManifestBlacklisted(mf.mf):
+        info "[" & $idx & "/" & $manifests.len & "] Not downloading manifest " & mf.mf & ", blacklisted"
+      elif db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf.mf).parseInt() > 0:
           info "[" & $idx & "/" & $manifests.len & "] Already have manifest " & mf.mf & " advertised by " & mf.url
       else:
           notice "[" & $idx & "/" & $manifests.len & "] Fetching " & mf.url & "/manifests/" & mf.mf
