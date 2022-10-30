@@ -46,19 +46,60 @@ proc nwcccInit*(c: NwcccConfig) =
     let cacheExists = fileExists(cache)
     info "Using cache: " & cache & (if cacheExists: " (existing)" else: " (new)")
     db = open(cache, "", "", "")
-    if not cacheExists:
-        db.exec(sql"""
-        CREATE TABLE IF NOT EXISTS manifests(
-            url      TEXT NOT NULL,
-            mf_hash  TEXT NOT NULL
-        )""")
-        db.exec(sql"""
-        CREATE TABLE IF NOT EXISTS resources(
-            hash     TEXT NOT NULL,
-            mf_id    INT  NOT NULL,
-            UNIQUE(hash, mf_id)
-        )""");
-        db.exec(sql"CREATE INDEX IF NOT EXISTS idx_hash ON resources(hash)")
+
+    # To change the DB schema, simply add another row to the migrations seq.
+    # - The first entry of the tuple is a human-readable description of the change.
+    # - The second entry of the tuple is the sql code needed to bring the database
+    #   to the state you want it to have. The code does not have to be idempotent
+    #   (migrations only run once), but robustness can't hurt.
+
+    type Migration = tuple[description: string, sql: seq[SqlQuery]]
+    const migrations: seq[Migration] = @[
+        # 0
+        (
+            "Initial database schema",
+            @[
+                sql """
+                    CREATE TABLE IF NOT EXISTS manifests(
+                        url      TEXT NOT NULL,
+                        mf_hash  TEXT NOT NULL
+                    );
+                """,
+                sql """
+                    CREATE TABLE IF NOT EXISTS resources(
+                        hash     TEXT NOT NULL,
+                        mf_id    INT  NOT NULL,
+                        UNIQUE(hash, mf_id)
+                    );
+                """,
+                sql """
+                    CREATE INDEX IF NOT EXISTS idx_hash ON resources(hash);
+                """
+            ]
+        ),
+        (
+            "Add table manifests_blacklist to blacklist successfully downloaded, but invalid manifests",
+            @[sql """
+                CREATE TABLE IF NOT EXISTS manifest_blacklist (
+                    mf_hash TEXT NOT NULL UNIQUE
+                )
+            """]
+        )
+    ]
+
+    let migration = db.getValue(sql"PRAGMA user_version").parseInt
+    # user_version holds the number of migrations applied, in order (migrations.len)
+    # This means that the value you read here will be the next migration to apply:
+    db.exec(sql"BEGIN")
+    if migration > migrations.len:
+        error "database file was created with newer version of utility, aborting for your own safety"
+        quit(1)
+    for mig in migrations[migration..<migrations.len]:
+        notice "sqlite: Applying migration: ", mig.description
+        for s in mig.sql:
+            db.exec(s)
+    db.exec(sql("PRAGMA user_version=" & $migrations.len))
+    db.exec(sql"COMMIT")
 
     for dir in cfg.localDirs:
         for entry in walkDir(dir):
@@ -68,10 +109,19 @@ proc nwcccInit*(c: NwcccConfig) =
                 localDirsCache[hash] = entry.path
 
 
+proc nwcccIsManifestBlacklisted*(mfHash: string): bool =
+    db.getValue(sql"select count(mf_hash) from manifest_blacklist where mf_hash = ?", mfHash) != "0"
+
+proc nwcccBlacklistManifest*(mfHash: string) =
+    error mfHash, ": blacklisting"
+    db.exec(sql"insert into manifest_blacklist (mf_hash) values(?)", mfHash)
+
 proc processManifest(base_url, mf_hash: string): Future[bool] {.async.} =
     let fqurl = base_url & "/manifests/" & mf_hash
     try:
         let mfRaw = await http.getContent(fqurl)
+        if secureHash(mfRaw) != parseSecureHash(mfHash):
+            raise newException(ValueError, "Checksum mismatch")
         let mf = readManifest(newStringStream(mf_raw))
         info "  Got " & $mf.entries.len & " entries, total size " & $totalSize(mf)
         db.exec(sql"BEGIN")
@@ -80,6 +130,12 @@ proc processManifest(base_url, mf_hash: string): Future[bool] {.async.} =
             discard db.tryExec(sql"INSERT INTO resources(hash, mf_id) VALUES(?,?)", entry.sha1, mf_id)
         db.exec(sql"COMMIT")
         result = true
+
+    except ManifestError:
+        error fqurl & " failed to parse manifest: " & getCurrentExceptionMsg().split("\n", 2)[0]
+        nwcccBlacklistManifest(mfHash)
+        result = false
+
     except:
         error fqurl & " failed: " & getCurrentExceptionMsg().split("\n", 2)[0]
         result = false
@@ -119,7 +175,9 @@ proc nwcccUpdateCache*() {.async.} =
 
     var futures: seq[Future[bool]]
     for idx, mf in manifests:
-      if db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf.mf).parseInt() > 0:
+      if nwcccIsManifestBlacklisted(mf.mf):
+        info "[" & $idx & "/" & $manifests.len & "] Not downloading manifest " & mf.mf & ", blacklisted"
+      elif db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf.mf).parseInt() > 0:
           info "[" & $idx & "/" & $manifests.len & "] Already have manifest " & mf.mf & " advertised by " & mf.url
       else:
           notice "[" & $idx & "/" & $manifests.len & "] Fetching " & mf.url & "/manifests/" & mf.mf
@@ -152,9 +210,11 @@ proc nwcccDownloadFromSwarm*(hash: string): Future[string] {.async.} =
         debug "Fetching from " & url & resource & " ..."
         try:
             let rawdata = await http.getContent(url & resource)
-            if rawdata[0..3] == magic:
-                return decompress(rawdata, makeMagic(magic))
-            return rawdata
+            let data = if rawdata[0..3] == magic: decompress(rawdata, makeMagic(magic))
+                       else: rawdata
+            if secureHash(data) != parseSecureHash(hash):
+                raise newException(ValueError, "Checksum mismatch on " & $hash)
+            return data
         except:
             info "Fetching from " & url & resource & " failed: " & getCurrentExceptionMsg()
 
