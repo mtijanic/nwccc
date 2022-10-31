@@ -2,7 +2,7 @@ import std/[httpclient, options, streams, json, logging, db_sqlite, strutils, os
             asyncdispatch, asyncfutures, sequtils]
 import neverwinter/[compressedbuf, nwsync, game]
 
-import asynchttppool
+import asynchttppool, coloredconsolelogger
 
 type
   NwcccConfig* = tuple
@@ -30,7 +30,7 @@ var localDirsCache = newTable[string, string]()
 proc nwcccInit*(c: NwcccConfig) =
   cfg = c
   http = newAsyncHttpPool(cfg.parallelDownloads, cfg.userAgent)
-  addHandler(newConsoleLogger(cfg.loglevel, "[$levelid] "))
+  addHandler(newColoredConsoleLogger(cfg.loglevel, "[$levelid] "))
 
   let home = if cfg.nwcccHome != "": cfg.nwcccHome else: findUserRoot() / "nwccc"
   createDir(home)
