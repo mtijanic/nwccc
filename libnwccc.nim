@@ -169,11 +169,11 @@ proc nwcccUpdateCache*() {.async.} =
   var futures: seq[Future[bool]]
   for idx, mf in manifests:
     if nwcccIsManifestBlacklisted(mf.mf):
-      info "[" & $idx & "/" & $manifests.len & "] Not downloading manifest " & mf.mf & ", blacklisted"
+      info "[" & $(idx+1) & "/" & $manifests.len & "] Not downloading manifest " & mf.mf & ", blacklisted"
     elif db.getValue(sql"SELECT count(*) FROM manifests WHERE mf_hash=?", mf.mf).parseInt() > 0:
-      info "[" & $idx & "/" & $manifests.len & "] Already have manifest " & mf.mf & " advertised by " & mf.url
+      info "[" & $(idx+1) & "/" & $manifests.len & "] Already have manifest " & mf.mf & " advertised by " & mf.url
     else:
-      notice "[" & $idx & "/" & $manifests.len & "] Fetching " & mf.url & "/manifests/" & mf.mf
+      notice "[" & $(idx+1) & "/" & $manifests.len & "] Fetching " & mf.url & "/manifests/" & mf.mf
       futures.add processManifest(mf.url, mf.mf)
 
   if futures.len > 0:
