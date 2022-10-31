@@ -78,6 +78,13 @@ proc nwcccInit*(c: NwcccConfig) =
           mf_hash TEXT NOT NULL UNIQUE
         )
       """]
+    ),
+    # 2
+    (
+      "Add index on resources.mf_id",
+      @[sql """
+        CREATE INDEX IF NOT EXISTS idx_resources_mf_id ON resources (mf_id);
+      """]
     )
   ]
 
