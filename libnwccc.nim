@@ -1,6 +1,6 @@
 import std/[httpclient, options, streams, json, logging, db_sqlite, strutils, os, tables, parsecfg, sha1,
             asyncdispatch, asyncfutures, sequtils]
-import neverwinter/[compressedbuf, nwsync]
+import neverwinter/[compressedbuf, nwsync, game]
 
 import asynchttppool
 
@@ -27,20 +27,12 @@ var cfg: NwcccConfig
 var credits: seq[string]
 var localDirsCache = newTable[string, string]()
 
-proc getNwnHome(): string =
-  if cfg.nwnHome != "":
-    return cfg.nwnHome
-  elif defined(Linux):
-    return getHomeDir() / ".local/share/Neverwinter Nights"
-  elif defined(Windows) or defined(MacOSX):
-    return getHomeDir() / "Documents/Neverwinter Nights"
-
 proc nwcccInit*(c: NwcccConfig) =
   cfg = c
   http = newAsyncHttpPool(cfg.parallelDownloads, cfg.userAgent)
   addHandler(newConsoleLogger(cfg.loglevel, "[$levelid] "))
 
-  let home = if cfg.nwcccHome != "": cfg.nwcccHome else: getNwnHome() / "nwccc"
+  let home = if cfg.nwcccHome != "": cfg.nwcccHome else: findUserRoot() / "nwccc"
   createDir(home)
 
   let cache = home / "nwccc.sqlite3"
@@ -190,7 +182,7 @@ proc nwcccUpdateCache*() {.async.} =
       error "Some manifests failed to update correctly; read the logs above"
 
 proc nwcccExtractFromNwsync*(hash: string): string =
-  let nwsyncdir = getNwnHome() / "nwsync"
+  let nwsyncdir = findUserRoot() / "nwsync"
   for file in walkDir(nwsyncdir):
     if file.path.contains("nwsyncdata_") and file.path.endsWith(".sqlite3"):
       debug "Checking local nwsync database " & file.path
