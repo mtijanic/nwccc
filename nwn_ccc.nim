@@ -50,21 +50,21 @@ cfg.userAgent = "nwccc"
 # Register directories which will be scanned for files to copy locally
 cfg.localDirs.add($ARGS["--destination"])
 if ARGS["--local-cache"]:
-    cfg.localDirs.add($ARGS["--local-cache"])
+  cfg.localDirs.add($ARGS["--local-cache"])
 
 if ARGS["--userdirectory"]:
-    cfg.nwnHome = $ARGS["--userdirectory"];
+  cfg.nwnHome = $ARGS["--userdirectory"];
 elif existsEnv("NWN_HOME") and not ARGS["--noenv"]:
-    cfg.nwnHome = getEnv("NWN_HOME")
+  cfg.nwnHome = getEnv("NWN_HOME")
 
 if ARGS["--nwccc-home"]:
-    cfg.nwcccHome = $ARGS["--nwccc-home"];
+  cfg.nwcccHome = $ARGS["--nwccc-home"];
 elif existsEnv("NWCCC_HOME") and not ARGS["--noenv"]:
-    cfg.nwcccHome = getEnv("NWCCC_HOME")
+  cfg.nwcccHome = getEnv("NWCCC_HOME")
 
 nwcccInit(cfg)
 if ARGS["--update-cache"]:
-    waitFor nwcccUpdateCache()
+  waitFor nwcccUpdateCache()
 
 # TODOs
 if ARGS["--append"]: warn "append mode not yet implemented"
@@ -72,20 +72,20 @@ if ARGS["--tlk"]: warn "writing to TLK not yet implemented"
 if ARGS["--resolve"]: warn "auto resolve not yet implemented"
 
 proc processNwc(nwcfile: string) =
-    waitFor nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
-    if ARGS["--nwc"]:
-        nwcccWriteFile(nwcfile.extractFilename(), readFile(nwcfile), $ARGS["--nwc"])
+  waitFor nwcccProcessNwcFile(nwcfile, $ARGS["--destination"])
+  if ARGS["--nwc"]:
+    nwcccWriteFile(nwcfile.extractFilename(), readFile(nwcfile), $ARGS["--nwc"])
 
 if ARGS["--filelist"]:
-    for nwcfile in lines($ARGS["--filelist"]):
-        processNwc(nwcfile)
+  for nwcfile in lines($ARGS["--filelist"]):
+    processNwc(nwcfile)
 elif ARGS["--recursive"]:
-    for nwcfile in walkDirRec($ARGS["--recursive"]):
-        if nwcfile.toLowerAscii.endsWith(".nwc"):
-            processNwc(nwcfile)
+  for nwcfile in walkDirRec($ARGS["--recursive"]):
+    if nwcfile.toLowerAscii.endsWith(".nwc"):
+      processNwc(nwcfile)
 else:
-    for nwcfile in ARGS["<nwcfile>"]:
-        processNwc(nwcfile)
+  for nwcfile in ARGS["<nwcfile>"]:
+    processNwc(nwcfile)
 
 if ARGS["--credits"]:
-    nwcccWriteCredits($ARGS["--credits"])
+  nwcccWriteCredits($ARGS["--credits"])

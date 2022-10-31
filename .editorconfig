@@ -1,0 +1,25 @@
+root = true
+
+[*.{nim,nims,cfg,nimble}]
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+end_of_line = lf
+charset = utf-8
+indent_size = 2
+
+[*.{c,cpp,h,hpp}]
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+end_of_line = lf
+charset = utf-8
+indent_size = 4
+
+[*.nwc]
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+end_of_line = lf
+charset = utf-8
+indent_size = 2

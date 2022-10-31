@@ -2,3 +2,5 @@ nimcache/
 nimblecache/
 htmldocs/
 bin/
+nwn_ccc
+.cache
