@@ -87,7 +87,10 @@ proc downloadAndResolve(pool: AsyncHttpPool, ahttp: AsyncHttpClient, qe: QueueEn
   else:
     yield fut
 
-  if fut.failed:
+  if qe.future.failed:
+    # Future was timed out by timer above: we don't need to re-fail it.
+    error pool, " ", qe.url, " failed early: ", qe.future.readError.msg.split("\n", 2)[0]
+  elif fut.failed:
     error pool, " ", qe.url, " failed: ", fut.readError.msg.split("\n", 2)[0]
     qe.future.fail(fut.readError)
   else:
