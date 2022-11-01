@@ -19,7 +19,7 @@ Options:
   -f, --filelist=<filelist>    Process all NWC files in <filelist>
   -u, --update-cache           Update local manifest cache
   -l, --local-cache=<dir>      Also search <dir> for local files before downloading
-  --parallel=<N>               Parallel downloads [default: 5]
+  --parallel=<N>               Parallel downloads [default: 20]
 
   -v, --verbose                Verbose prints as files are being processed
   -q, --quiet                  Suppresses all non-error prints
