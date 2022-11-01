@@ -248,6 +248,9 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) {.async.} =
     let summary = nwc.name & " v" & nwc.version & " by " & nwc.author & " (" & nwc.license & ")"
     info summary
     credits.add(summary)
+
+    var downloadFutures: seq[tuple[filename, hash: string, dataFut: Future[string]]]
+
     for (filename, hash) in nwc.files:
       if localDirsCache.hasKey(hash):
         if localDirsCache[hash] != (destination / filename):
@@ -261,9 +264,16 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) {.async.} =
           info "Found hash " & hash & " in local nwsync data"
         else:
           notice "Downloading " & filename & " (" & hash & ")"
-          data = await nwcccDownloadFromSwarm(hash)
+          downloadFutures.add((filename, hash, nwcccDownloadFromSwarm(hash)))
+
+    if downloadFutures.len > 0:
+      info "Waiting for ", downloadFutures.len, " downloads to finish"
+      discard await all downloadFutures.mapIt(it.dataFut)
+      for (filename, hash, fut) in downloadFutures:
+        let data = fut.read
         nwcccWriteFile(filename, data, destination)
         localDirsCache[hash] = destination / filename
+
   except:
     error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg().split("\n", 2)[0]
 
