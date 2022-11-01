@@ -199,8 +199,9 @@ proc nwcccExtractFromNwsync*(hash: string): string =
         return data
   return ""
 
+proc nwcccWriteFile*(filename, content, destination: string)
 
-proc nwcccDownloadFromSwarm*(hash: string): Future[string] {.async.} =
+proc nwcccDownloadFromSwarm*(hash, filename, destination: string): Future[void] {.async.} =
   let resource = "/data/sha1" / hash[0..1] / hash[2..3] / hash
   const magic = "NSYC"
 
@@ -214,7 +215,11 @@ proc nwcccDownloadFromSwarm*(hash: string): Future[string] {.async.} =
              else: rawdata
       if secureHash(data) != parseSecureHash(hash):
         raise newException(ValueError, "Checksum mismatch on " & $hash)
-      return data
+
+      localDirsCache[hash] = destination / filename
+      nwcccWriteFile(filename, data, destination)
+      return
+
     except:
       info "Fetching from " & url & resource & " failed: " & getCurrentExceptionMsg()
 
@@ -249,7 +254,7 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) {.async.} =
     info summary
     credits.add(summary)
 
-    var downloadFutures: seq[tuple[filename, hash: string, dataFut: Future[string]]]
+    var downloadFutures: seq[Future[void]]
 
     for (filename, hash) in nwc.files:
       if localDirsCache.hasKey(hash):
@@ -264,15 +269,11 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) {.async.} =
           info "Found hash " & hash & " in local nwsync data"
         else:
           notice "Downloading " & filename & " (" & hash & ")"
-          downloadFutures.add((filename, hash, nwcccDownloadFromSwarm(hash)))
+          downloadFutures.add(nwcccDownloadFromSwarm(hash, filename, destination))
 
     if downloadFutures.len > 0:
       info "Waiting for ", downloadFutures.len, " downloads to finish"
-      discard await all downloadFutures.mapIt(it.dataFut)
-      for (filename, hash, fut) in downloadFutures:
-        let data = fut.read
-        nwcccWriteFile(filename, data, destination)
-        localDirsCache[hash] = destination / filename
+      await all downloadFutures
 
   except:
     error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg().split("\n", 2)[0]
