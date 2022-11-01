@@ -30,7 +30,7 @@ var localDirsCache = newTable[string, string]()
 proc nwcccInit*(c: NwcccConfig) =
   cfg = c
   http = newAsyncHttpPool(cfg.parallelDownloads, cfg.userAgent)
-  addHandler(newColoredConsoleLogger(cfg.loglevel, "[$levelid] "))
+  addHandler(newColoredConsoleLogger(cfg.loglevel, "$time [$levelid] "))
 
   let home = if cfg.nwcccHome != "": cfg.nwcccHome else: findUserRoot(cfg.nwnHome) / "nwccc"
   createDir(home)
