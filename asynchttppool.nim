@@ -53,7 +53,7 @@ proc downloadAndResolve(pool: AsyncHttpPool, ahttp: AsyncHttpClient, qe: QueueEn
     if not isNil qe.progress:
       result = qe.progress(total, progress, speed)
     else:
-      info qe.url, ": ", progress, " of ", total, ", current rate: ", speed div 1000, "kb/s"
+      debug qe.url, ": ", progress, " of ", total, ", current rate: ", speed div 1000, "kb/s"
 
   # We start one async timer per inflight xfer to check if we're timing out - simple UX
   addTimer(1000, false) do (fd: AsyncFD) -> bool:
@@ -72,7 +72,7 @@ proc downloadAndResolve(pool: AsyncHttpPool, ahttp: AsyncHttpClient, qe: QueueEn
     # Otherwise, report inactivity every
     if now - qe.lastProgressReport > initDuration(seconds = 6):
       qe.lastProgressReport = now
-      info pool, " ", qe.url, ": Waiting for data .. (for ", (now - qe.transferStart).inSeconds, " s)"
+      debug pool, " ", qe.url, ": Waiting for data .. (for ", (now - qe.transferStart).inSeconds, " s)"
     false
 
   info pool, " starting download: ", qe.url
