@@ -32,7 +32,7 @@ proc nwcccInit*(c: NwcccConfig) =
   http = newAsyncHttpPool(cfg.parallelDownloads, cfg.userAgent)
   addHandler(newColoredConsoleLogger(cfg.loglevel, "[$levelid] "))
 
-  let home = if cfg.nwcccHome != "": cfg.nwcccHome else: findUserRoot() / "nwccc"
+  let home = if cfg.nwcccHome != "": cfg.nwcccHome else: findUserRoot(cfg.nwnHome) / "nwccc"
   createDir(home)
 
   let cache = home / "nwccc.sqlite3"
@@ -189,7 +189,7 @@ proc nwcccUpdateCache*() {.async.} =
       error "Some manifests failed to update correctly; read the logs above"
 
 proc nwcccExtractFromNwsync*(hash: string): string =
-  let nwsyncdir = findUserRoot() / "nwsync"
+  let nwsyncdir = findUserRoot(cfg.nwnHome) / "nwsync"
   for file in walkDir(nwsyncdir):
     if file.path.contains("nwsyncdata_") and file.path.endsWith(".sqlite3"):
       debug "Checking local nwsync database " & file.path

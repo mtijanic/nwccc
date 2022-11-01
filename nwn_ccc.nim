@@ -25,7 +25,7 @@ Options:
   -q, --quiet                  Suppresses all non-error prints
   -h, --help                   Print this help message and exit
 
-  --noenv                      Ignore environment variables for config options
+  --noenv                      Ignore environment variables for config options (except NWN_HOME)
   --nwccc-home=<homedir>       Override NWCCC home directory (default $NWCCC_HOME, then $NWN_HOME/nwccc)
   --userdirectory=<userdir>    Override NWN user directory (default $NWN_HOME, then autodetect)
 
@@ -54,8 +54,6 @@ if ARGS["--local-cache"]:
 
 if ARGS["--userdirectory"]:
   cfg.nwnHome = $ARGS["--userdirectory"];
-elif existsEnv("NWN_HOME") and not ARGS["--noenv"]:
-  cfg.nwnHome = getEnv("NWN_HOME")
 
 if ARGS["--nwccc-home"]:
   cfg.nwcccHome = $ARGS["--nwccc-home"];
