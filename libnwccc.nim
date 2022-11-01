@@ -40,6 +40,12 @@ proc nwcccInit*(c: NwcccConfig) =
   info "Using cache: " & cache & (if cacheExists: " (existing)" else: " (new)")
   db = open(cache, "", "", "")
 
+  # TODO: Experiment a bit more to find optimial settings..
+  db.exec(sql"PRAGMA cache_size=-1000000")
+  db.exec(sql"PRAGMA journal_mode=WAL")
+  db.exec(sql"PRAGMA mmap_size=16000000000")
+  db.exec(sql"PRAGMA synchronous=OFF")
+
   # To change the DB schema, simply add another row to the migrations seq.
   # - The first entry of the tuple is a human-readable description of the change.
   # - The second entry of the tuple is the sql code needed to bring the database
@@ -52,10 +58,12 @@ proc nwcccInit*(c: NwcccConfig) =
     (
       "Initial database schema",
       @[
+        # Unique constraint added later, can't alter table migrate in sqlite
         sql """
           CREATE TABLE IF NOT EXISTS manifests(
             url      TEXT NOT NULL,
-            mf_hash  TEXT NOT NULL
+            mf_hash  TEXT NOT NULL,
+            UNIQUE(url, mf_hash)
           );
         """,
         sql """
@@ -119,16 +127,19 @@ proc nwcccBlacklistManifest*(mfHash: string) =
 proc processManifest(baseUrl, mfHash: string): Future[bool] {.async.} =
   let fqurl = baseUrl & "/manifests/" & mfHash
   try:
-    let mfRaw = await http.getContent(fqurl)
-    if secureHash(mfRaw) != parseSecureHash(mfHash):
-      raise newException(ValueError, "Checksum mismatch")
-    let mf = readManifest(newStringStream(mfRaw))
-    info "  Got " & $mf.entries.len & " entries, total size " & $totalSize(mf)
-    db.exec(sql"BEGIN")
-    let mfId = db.insertID(sql"INSERT INTO manifests(url, mf_hash) VALUES(?,?)", baseUrl, mfHash)
-    for entry in mf.entries:
-      discard db.tryExec(sql"INSERT INTO resources(hash, mf_id) VALUES(?,?)", entry.sha1, mfId)
-    db.exec(sql"COMMIT")
+    if db.getValue(sql"SELECT count(*) FROM manifests WHERE url=? AND mf_hash=?", baseUrl, mfHash) == "0":
+      let mfRaw = await http.getContent(fqurl)
+      if secureHash(mfRaw) != parseSecureHash(mfHash):
+        raise newException(ValueError, "Checksum mismatch")
+      let mf = readManifest(newStringStream(mfRaw))
+      info "  Got " & $mf.entries.len & " entries, total size " & $totalSize(mf)
+      db.exec(sql"BEGIN")
+      let mfId = db.insertID(sql"INSERT INTO manifests(url, mf_hash) VALUES(?,?)", baseUrl, mfHash)
+      for entry in mf.entries:
+        discard db.tryExec(sql"INSERT INTO resources(hash, mf_id) VALUES(?,?)", entry.sha1, mfId)
+      db.exec(sql"COMMIT")
+    else:
+      info "Already have same url/manifest in database: " & baseUrl / mfHash
     result = true
 
   except ManifestError:
@@ -172,6 +183,8 @@ proc nwcccUpdateCache*() {.async.} =
       db.exec(sql"DELETE FROM manifests WHERE rowid=?", row[0])
       db.exec(sql"DELETE FROM resources WHERE mf_id=?", row[0])
       db.exec(sql"COMMIT")
+
+  manifests = manifests.deduplicate();
 
   var futures: seq[Future[bool]]
   for idx, mf in manifests:
