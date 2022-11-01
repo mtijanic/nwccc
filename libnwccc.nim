@@ -268,7 +268,8 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) {.async.} =
     error "Processing " & nwcfile & " failed: " & getCurrentExceptionMsg().split("\n", 2)[0]
 
 proc nwcccWriteCredits*(file: string) =
-  let f = openFileStream(file, fmAppend)
-  for line in credits:
-    f.write(line & "\n")
-  notice "Wrote credits to " & file
+  if credits.len > 0:
+    let f = openFileStream(file, fmAppend)
+    for line in credits:
+      f.write(line & "\n")
+    notice "Wrote credits to " & file
