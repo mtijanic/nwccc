@@ -1,6 +1,6 @@
 import std/[httpclient, options, streams, json, logging, db_sqlite, strutils, os, tables, parsecfg, sha1,
-            asyncdispatch, asyncfutures, sequtils]
-import neverwinter/[compressedbuf, nwsync, game]
+            asyncdispatch, asyncfutures, sequtils, pegs]
+import neverwinter/[compressedbuf, nwsync, game, resman, resdir, resfile, erf]
 
 import asynchttppool, coloredconsolelogger
 
@@ -297,3 +297,70 @@ proc nwcccWriteCredits*(file: string) =
     for line in credits:
       f.write(line & "\n")
     notice "Wrote credits to " & file
+
+proc add(rm: ResMan, spec: seq[string])  =
+  for s in spec:
+    let split = splitFile(s)
+    debug "RM: ", s
+    if dirExists(s):
+      rm.add newResDir(s)
+    elif fileExists(s) and split.ext in [".erf", ".hak", ".mod"]:
+      rm.add readErf(openFileStream(s))
+    elif fileExists(s):
+      rm.add newResFile(s)
+    else:
+      raise newException(ValueError, "Don't know how to handle: " & $split)
+
+proc nwcccGenerate*(spec: seq[string], dep: seq[string]): Config =
+  ## Generate a valid .nwc file from the given file spec:
+  ## All given arguments are read into a empty resman in the order given, then
+  ## exported sequentially to .nwc.
+  ## Will throw on unrecoverable error.
+
+  let rmSpec = newResMan(cacheSizeMB = 0)
+  rmSpec.add(spec)
+
+  let rmDep = newResMan(cacheSizeMB = 0)
+  rmDep.add(dep)
+  rmDep.add(spec)
+
+  result = newConfig()
+  result.setSectionKey("", "Name", "?")
+  result.setSectionKey("", "Author", "Aries the Griffon")
+  result.setSectionKey("", "License", "CC BY-NC-SA 3.0")
+  result.setSectionKey("", "Version", "0.0.1")
+
+  const depExt = [".mdl", ".bmp", ".tga", ".dds", ".ktx", ".txi"]
+
+  var seen: HashSet[ResRef]
+
+  proc addWithDep(into: var Config, r: ResRef) =
+    if seen.contains(r): return
+    seen.incl(r)
+
+    info "generate: ", r
+    let data = rmDep.demand(r).readAll()
+    into.setSectionKey("files", $r, toLowerAscii($secureHash(data)))
+
+    case r.resType.getResExt
+    of "mdl":
+      # if it's a binary mdl, the header will start with \x00\x00.
+      # However, we want to parse both binary MDL and ascii ones.
+      let strings = data.findAll(peg"{[A-Za-z0-9_]+}").
+        filterIt(it.len >= 4).
+        mapIt(it.toLowerAscii).
+        deduplicate
+      for s in strings:
+        for e in depExt:
+          let depOptR = tryNewResolvedResRef(s & e)
+          if depOptR.isSome:
+            let depR = depOptR.unsafeGet
+            if not seen.contains(depR) and rmDep.contains(depR):
+              info "generate: ", r, " pulls in ", depR
+              into.addWithDep(depR)
+    else: discard
+
+  for r in rmSpec.contents:
+    result.addWithDep(r)
+
+  # TODO: 2da, tlk post-processing

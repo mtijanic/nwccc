@@ -7,6 +7,7 @@ Usage:
   nwn_ccc [options] -f <nwcfile-list>
   nwn_ccc [options] -r <directory>
   nwn_ccc [options] -u | --update-cache
+  nwn_ccc [options] -g <nwc> <spec>... [-s <search>...]
   nwn_ccc -h | --help
 
 Options:
@@ -17,6 +18,8 @@ Options:
   -n, --nwc=<nwchak>           Store a copy of processed NWC files in <nwchak>; can either be a hak file or a directory
   -c, --credits=<file>         Write credit fragments to <file> [default: credits.txt]
   -f, --filelist=<filelist>    Process all NWC files in <filelist>
+  -g, --generate               Generate <nwc> from <spec>, optionally also using <search> to look up dependencies
+  -s, --search=<search>...     Add <search> to search path (for --generate only)
   -u, --update-cache           Update local manifest cache
   -l, --local-cache=<dir>      Also search <dir> for local files before downloading
   --parallel=<N>               Parallel downloads [default: 20]
@@ -38,7 +41,7 @@ Options:
                                    small: Overwrite larger files with smaller
                                    fail: Report error and abort
 """
-import std/[os, logging, strutils, asyncdispatch]
+import std/[os, logging, strutils, sequtils, streams, asyncdispatch, parsecfg]
 import libnwccc
 
 var cfg: NwcccConfig
@@ -87,3 +90,13 @@ else:
 
 if ARGS["--credits"]:
   nwcccWriteCredits($ARGS["--credits"])
+
+if ARGS["--generate"]:
+  let nwc = $ARGS["<nwc>"]
+
+  if fileExists(nwc) or dirExists(nwc) or symlinkExists(nwc):
+    raise newException(ValueError, "will not clobber: " & $nwc)
+
+  let dict = nwcccGenerate(toSeq ARGS["<spec>"], toSeq ARGS["--search"])
+  dict.writeConfig newFileStream(nwc, fmWrite)
+  notice "nwc: ", nwc, " written"
