@@ -60,12 +60,14 @@ if ARGS["--nwccc-home"]:
 elif existsEnv("NWCCC_HOME") and not ARGS["--noenv"]:
   cfg.nwcccHome = getEnv("NWCCC_HOME")
 
+if ARGS["--append"]:
+  cfg.appendDest = $ARGS["--append"]
+
 nwcccInit(cfg)
 if ARGS["--update-cache"]:
   waitFor nwcccUpdateCache()
 
 # TODOs
-if ARGS["--append"]: warn "append mode not yet implemented"
 if ARGS["--tlk"]: warn "writing to TLK not yet implemented"
 if ARGS["--resolve"]: warn "auto resolve not yet implemented"
 
@@ -87,3 +89,6 @@ else:
 
 if ARGS["--credits"]:
   nwcccWriteCredits($ARGS["--credits"])
+
+if ARGS["--append"]:
+  nwcccWrite2DAs()

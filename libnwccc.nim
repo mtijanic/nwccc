@@ -1,6 +1,6 @@
 import std/[httpclient, options, streams, json, logging, db_sqlite, strutils, os, tables, parsecfg, sha1,
             asyncdispatch, asyncfutures, sequtils]
-import neverwinter/[compressedbuf, nwsync, game]
+import neverwinter/[compressedbuf, nwsync, game, twoda]
 
 import asynchttppool, coloredconsolelogger
 
@@ -11,13 +11,13 @@ type
     nwnHome: string
     nwcccHome: string
     userAgent: string
+    appendDest: string
     localDirs: seq[string]
     parallelDownloads: int
 
   NwcFile* = tuple
     name, author, license, version: string
     files: seq[tuple[filename, hash: string]]
-    # TODO: 2da data, etc
 
 const nwcccOptout = "[nwccc-optout]"
 
@@ -26,6 +26,8 @@ var http: AsyncHttpPool
 var cfg: NwcccConfig
 var credits: seq[string]
 var localDirsCache = newTable[string, string]()
+
+var append2DAs = newTable[string, TwoDA]();
 
 proc nwcccInit*(c: NwcccConfig) =
   cfg = c
@@ -238,6 +240,30 @@ proc nwcccDownloadFromSwarm*(hash, filename, destination: string): Future[void] 
 
   raise newException(OSError, "Unable to download hash " & hash & " from any server in swarm")
 
+proc findNextFreeRow(twoda: TwoDA): Natural = 
+  result = 0;
+  while result < twoda.rows.len:
+    if twoda[result,"label"].isNone:
+      break;
+    result = result+1
+
+proc handle2da(twodaFile: string, row: OrderedTableRef[string, string]) =
+  if not append2DAs.hasKey(twodaFile):
+    let path = cfg.appendDest / twodaFile
+    try:
+      info "Parsing " & path
+      append2DAs[twodaFile] = openFileStream(path).readTwoDA()
+    except:
+        error "Append failed: file " & path & " not found"
+        return
+
+  var twoda = append2DAs[twodaFile]
+  var i = findNextFreeRow(twoda)
+
+  for key in row.keys:
+    debug twodaFile & "[" & $i & "]: " & key & " = " & row[key]
+    twoda[i, key] = some(row[key])
+
 
 proc nwcccWriteFile*(filename, content, destination: string) =
   if fileExists(destination):
@@ -258,6 +284,12 @@ proc nwcccParseNwcFile*(filename: string): NwcFile =
   if dict.hasKey("files"):
     for key in dict["files"].keys:
       result.files.add((key, dict.getSectionValue("files", key)))
+
+  if cfg.appendDest != "":
+    for twodaFile in dict.keys:
+      if twodaFile.endsWith(".2da"):
+        info filename & ": appending to " & twodaFile 
+        handle2da(twodaFile, dict[twodaFile])
 
 proc nwcccProcessNwcFile*(nwcfile, destination: string) {.async.} =
   try:
@@ -298,3 +330,9 @@ proc nwcccWriteCredits*(file: string) =
     for line in credits:
       f.write(line & "\n")
     notice "Wrote credits to " & file
+
+proc nwcccWrite2DAs*() =
+  for name, twoda in append2DAs:
+    let output = openFileStream(cfg.appendDest / name, fmWrite)
+    notice "Writing " & cfg.appendDest / name
+    output.writeTwoDA(twoda)
