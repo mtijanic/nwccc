@@ -20,6 +20,7 @@ type
     files: seq[tuple[filename, hash: string]]
 
 const nwcccOptout = "[nwccc-optout]"
+const nwsyncMagic = "NSYC"
 
 var db: DbConn
 var http: AsyncHttpPool
@@ -211,14 +212,13 @@ proc nwcccExtractFromNwsync*(hash: string): string =
       let shard = open(file.path, "", "", "")
       let data = shard.getValue(sql"SELECT data FROM resrefs WHERE sha1=?", hash)
       if data != "":
-        return data
+        return if data[0..3] == nwsyncMagic: decompress(data, makeMagic(nwsyncMagic)) else: data
   return ""
 
 proc nwcccWriteFile*(filename, content, destination: string)
 
 proc nwcccDownloadFromSwarm*(hash, filename, destination: string): Future[void] {.async.} =
   let resource = "/data/sha1" / hash[0..1] / hash[2..3] / hash
-  const magic = "NSYC"
 
   let rows = db.getAllRows(sql"SELECT mf_id FROM resources WHERE hash=? ORDER BY RANDOM()", hash)
   for mfId in rows:
@@ -226,7 +226,7 @@ proc nwcccDownloadFromSwarm*(hash, filename, destination: string): Future[void] 
     debug "Fetching from " & url & resource & " ..."
     try:
       let rawdata = await http.getContent(url & resource)
-      let data = if rawdata[0..3] == magic: decompress(rawdata, makeMagic(magic))
+      let data = if rawdata[0..3] == nwsyncMagic: decompress(rawdata, makeMagic(nwsyncMagic))
              else: rawdata
       if secureHash(data) != parseSecureHash(hash):
         raise newException(ValueError, "Checksum mismatch on " & $hash)
