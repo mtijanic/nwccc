@@ -277,9 +277,10 @@ proc nwcccProcessNwcFile*(nwcfile, destination: string) {.async.} =
         else:
           info "Already have same file content for " & filename
       else:
-        var data = nwcccExtractFromNwsync(hash)
+        let data = nwcccExtractFromNwsync(hash)
         if data != "":
           info "Found hash " & hash & " in local nwsync data"
+          nwcccWriteFile(filename, data, destination)
         else:
           notice "Downloading " & filename & " (" & hash & ")"
           downloadFutures.add(nwcccDownloadFromSwarm(hash, filename, destination))
